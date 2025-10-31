@@ -32,3 +32,53 @@ impl Day {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn test_remove_task() {
+        let date = NaiveDate::from_ymd_opt(2025, 10, 31).unwrap();
+        let mut day = Day::new(date);
+
+        let task_id = "task-123".to_string();
+        day.add_task(task_id.clone());
+        assert_eq!(day.task_ids.len(), 1);
+
+        day.remove_task(&task_id);
+        assert_eq!(day.task_ids.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_task_not_present() {
+        let date = NaiveDate::from_ymd_opt(2025, 10, 31).unwrap();
+        let mut day = Day::new(date);
+
+        day.add_task("task-123".to_string());
+        day.remove_task("task-456");
+
+        assert_eq!(day.task_ids.len(), 1);
+        assert_eq!(day.task_ids[0], "task-123");
+    }
+
+    #[test]
+    fn test_with_notes() {
+        let date = NaiveDate::from_ymd_opt(2025, 10, 31).unwrap();
+        let day = Day::new(date).with_notes("Important meeting at 2pm".to_string());
+
+        assert!(day.notes.is_some());
+        assert_eq!(day.notes.unwrap(), "Important meeting at 2pm");
+    }
+
+    #[test]
+    fn test_with_notes_builder_pattern() {
+        let date = NaiveDate::from_ymd_opt(2025, 10, 31).unwrap();
+        let mut day = Day::new(date).with_notes("First note".to_string());
+
+        day.add_task("task-123".to_string());
+        assert_eq!(day.task_ids.len(), 1);
+        assert_eq!(day.notes.unwrap(), "First note");
+    }
+}

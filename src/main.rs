@@ -242,14 +242,29 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
 
     println!("\nTasks for {}:\n", date);
 
-    if day.task_ids.is_empty() {
+    // Collect tasks scheduled for this day
+    let mut tasks: Vec<Task> = day.task_ids
+        .iter()
+        .filter_map(|id| storage.load_task(id).ok())
+        .collect();
+
+    // Also collect tasks with due_date matching this date
+    let all_tasks = storage.list_all_tasks()?;
+    for task in all_tasks {
+        // Check if the due_date matches this date
+        if let Some(due) = task.due_date {
+            if due.date_naive() == date {
+                // Add if not already in the list
+                if !tasks.iter().any(|t| t.id == task.id) {
+                    tasks.push(task);
+                }
+            }
+        }
+    }
+
+    if tasks.is_empty() {
         println!("No tasks scheduled for this day.");
     } else {
-        let mut tasks: Vec<Task> = day.task_ids
-            .iter()
-            .filter_map(|id| storage.load_task(id).ok())
-            .collect();
-
         // Sort by category and priority
         tasks.sort_by(|a, b| {
             a.category.cmp(&b.category)
