@@ -153,6 +153,50 @@ impl Storage {
         Ok(false)
     }
 
+    pub fn log_task_completion(&self, task_id: &str, task_title: &str) -> Result<()> {
+        use chrono::Local;
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let log_path = self.data_dir.join("history.log");
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let log_entry = format!("{} | {} | {}\n", timestamp, task_id, task_title);
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
+
+        file.write_all(log_entry.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn get_next_task_id(&self) -> Result<String> {
+        use std::fs::OpenOptions;
+        use std::io::{Read, Write};
+
+        let counter_path = self.data_dir.join("id_counter.txt");
+
+        let next_id = if counter_path.exists() {
+            let mut content = String::new();
+            let mut file = OpenOptions::new().read(true).open(&counter_path)?;
+            file.read_to_string(&mut content)?;
+            content.trim().parse::<u64>().unwrap_or(1)
+        } else {
+            1
+        };
+
+        // Write the incremented counter back
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&counter_path)?;
+        file.write_all(format!("{}", next_id + 1).as_bytes())?;
+
+        Ok(next_id.to_string())
+    }
+
     // Conversion helpers
     fn task_to_text(&self, task: &Task) -> String {
         let mut lines = vec![

@@ -63,6 +63,9 @@ pub enum Commands {
         id: String,
     },
 
+    /// Mark all tasks as incomplete
+    UncompleteAll,
+
     /// Delete a task
     Delete {
         /// Task ID

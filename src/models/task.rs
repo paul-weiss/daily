@@ -54,10 +54,10 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(title: String, priority: Priority, category: String) -> Self {
+    pub fn new(id: String, title: String, priority: Priority, category: String) -> Self {
         let now = Utc::now();
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             title,
             description: None,
             priority,

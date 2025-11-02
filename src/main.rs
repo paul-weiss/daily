@@ -30,7 +30,8 @@ async fn main() -> Result<()> {
             let priority = Priority::from_str(&priority)
                 .context("Invalid priority. Use: low, medium, high, or critical")?;
 
-            let mut task = Task::new(title, priority, category);
+            let task_id = storage.get_next_task_id()?;
+            let mut task = Task::new(task_id, title, priority, category);
 
             if let Some(desc) = description {
                 task = task.with_description(desc);
@@ -99,7 +100,7 @@ async fn main() -> Result<()> {
                     println!(
                         "{} {} - {}{} (Priority: {})",
                         status,
-                        task.id[..8].to_string(),
+                        task.id,
                         task.title,
                         daily_indicator,
                         task.priority.to_string()
@@ -127,9 +128,10 @@ async fn main() -> Result<()> {
                 storage.log_daily_completion(&task.id, &task.title, today)?;
                 println!("Daily task '{}' completed for {}!", task.title, today);
             } else {
-                // For regular tasks, mark as complete
+                // For regular tasks, mark as complete and log to history
                 task.mark_complete();
                 storage.save_task(&task)?;
+                storage.log_task_completion(&task.id, &task.title)?;
                 println!("Task '{}' marked as complete!", task.title);
             }
         }
@@ -140,6 +142,19 @@ async fn main() -> Result<()> {
             task.mark_incomplete();
             storage.save_task(&task)?;
             println!("Task '{}' marked as incomplete!", task.title);
+        }
+
+        Commands::UncompleteAll => {
+            let mut tasks = storage.list_all_tasks()?;
+            let mut count = 0;
+            for task in tasks.iter_mut() {
+                if task.completed {
+                    task.mark_incomplete();
+                    storage.save_task(task)?;
+                    count += 1;
+                }
+            }
+            println!("{} task(s) marked as incomplete!", count);
         }
 
         Commands::Delete { id } => {
@@ -324,7 +339,7 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
             println!(
                 "{} {} - {}{} (Priority: {})",
                 status,
-                &task.id[..8],
+                task.id,
                 task.title,
                 daily_indicator,
                 task.priority.to_string()
