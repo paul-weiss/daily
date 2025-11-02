@@ -121,6 +121,13 @@ pub enum Commands {
         date: String,
     },
 
+    /// Generate PDF of today's tasks
+    TodayPdf {
+        /// Output file path (optional, defaults to ~/daily-YYYY-MM-DD.pdf)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
     /// Add task to a specific day
     Schedule {
         /// Task ID

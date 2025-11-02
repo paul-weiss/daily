@@ -229,6 +229,19 @@ async fn main() -> Result<()> {
             show_day_tasks(&storage, date)?;
         }
 
+        Commands::TodayPdf { output } => {
+            let today = Local::now().date_naive();
+            let output_path = if let Some(path) = output {
+                path
+            } else {
+                let home = dirs::home_dir().context("Could not find home directory")?;
+                home.join(format!("daily-{}.pdf", today)).to_string_lossy().to_string()
+            };
+
+            generate_daily_pdf(&storage, today, &output_path)?;
+            println!("PDF generated: {}", output_path);
+        }
+
         Commands::Schedule { task_id, date } => {
             let date = NaiveDate::parse_from_str(&date, "%Y-%m-%d")?;
             let task = storage.load_task(&task_id)
@@ -266,6 +279,122 @@ async fn main() -> Result<()> {
             println!("{}", response);
         }
     }
+
+    Ok(())
+}
+
+fn generate_daily_pdf(storage: &Storage, date: NaiveDate, output_path: &str) -> Result<()> {
+    use printpdf::*;
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    // Create PDF document
+    let (doc, page1, layer1) = PdfDocument::new("Daily Tasks", Mm(210.0), Mm(297.0), "Layer 1");
+    let mut current_layer = doc.get_page(page1).get_layer(layer1);
+
+    // Set up fonts
+    let font = doc.add_builtin_font(BuiltinFont::Helvetica)?;
+    let font_bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)?;
+
+    let mut y_position = 270.0; // Start from top
+
+    // Title
+    current_layer.use_text(
+        format!("Daily Tasks - {}", date),
+        24.0,
+        Mm(20.0),
+        Mm(y_position),
+        &font_bold,
+    );
+    y_position -= 15.0;
+
+    // Get all tasks
+    let mut tasks = storage.list_all_tasks()?;
+
+    if tasks.is_empty() {
+        current_layer.use_text(
+            "No tasks found.",
+            12.0,
+            Mm(20.0),
+            Mm(y_position),
+            &font,
+        );
+    } else {
+        tasks.sort_by(|a, b| {
+            a.category.cmp(&b.category)
+                .then(b.priority.value().cmp(&a.priority.value()))
+        });
+
+        let mut current_category = String::new();
+        for task in tasks {
+            // Check if we need a new page
+            if y_position < 30.0 {
+                let (page, layer) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
+                current_layer = doc.get_page(page).get_layer(layer);
+                y_position = 270.0;
+            }
+
+            // Category header
+            if task.category != current_category {
+                y_position -= 5.0;
+                current_layer.use_text(
+                    format!("=== {} ===", task.category.to_uppercase()),
+                    14.0,
+                    Mm(20.0),
+                    Mm(y_position),
+                    &font_bold,
+                );
+                y_position -= 8.0;
+                current_category = task.category.clone();
+            }
+
+            // Task details
+            let status = if task.completed { "[✓]" } else { "[ ]" };
+            let daily_indicator = if task.is_daily { " [Daily]" } else { "" };
+            let task_line = format!(
+                "{} {} - {}{} (Priority: {})",
+                status,
+                task.id,
+                task.title,
+                daily_indicator,
+                task.priority.to_string()
+            );
+
+            current_layer.use_text(task_line, 11.0, Mm(25.0), Mm(y_position), &font);
+            y_position -= 6.0;
+
+            // Description if present
+            if let Some(desc) = &task.description {
+                current_layer.use_text(
+                    format!("    {}", desc),
+                    9.0,
+                    Mm(30.0),
+                    Mm(y_position),
+                    &font,
+                );
+                y_position -= 5.0;
+            }
+
+            // Due date if present
+            if let Some(due) = &task.due_date {
+                current_layer.use_text(
+                    format!("    Due: {}", due.format("%Y-%m-%d")),
+                    9.0,
+                    Mm(30.0),
+                    Mm(y_position),
+                    &font,
+                );
+                y_position -= 5.0;
+            }
+
+            y_position -= 2.0;
+        }
+    }
+
+    // Save PDF
+    let file = File::create(output_path)?;
+    let mut writer = BufWriter::new(file);
+    doc.save(&mut writer)?;
 
     Ok(())
 }
