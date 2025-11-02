@@ -30,6 +30,10 @@ pub enum Commands {
         /// Due date (YYYY-MM-DD)
         #[arg(short = 'D', long)]
         due: Option<String>,
+
+        /// Daily recurring task
+        #[arg(long)]
+        daily: bool,
     },
 
     /// List tasks
@@ -81,6 +85,15 @@ pub enum Commands {
 
         /// Target category
         category: String,
+    },
+
+    /// Update task daily status
+    Daily {
+        /// Task ID
+        id: String,
+
+        /// Set as daily task (true/false)
+        daily: bool,
     },
 
     /// Create a new category

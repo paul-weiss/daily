@@ -111,6 +111,48 @@ impl Storage {
         Ok(categories)
     }
 
+    // Daily task log operations
+    pub fn log_daily_completion(&self, task_id: &str, task_title: &str, date: NaiveDate) -> Result<()> {
+        let log_path = self.data_dir.join("daily.log");
+        let log_entry = format!("{} | {} | {}\n", date, task_id, task_title);
+
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
+
+        file.write_all(log_entry.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn is_daily_completed_on_date(&self, task_id: &str, date: NaiveDate) -> Result<bool> {
+        let log_path = self.data_dir.join("daily.log");
+
+        if !log_path.exists() {
+            return Ok(false);
+        }
+
+        let content = fs::read_to_string(log_path)?;
+        let date_str = date.to_string();
+
+        for line in content.lines() {
+            if let Some((log_date, rest)) = line.split_once(" | ") {
+                if log_date == date_str {
+                    if let Some((log_id, _)) = rest.split_once(" | ") {
+                        if log_id == task_id {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
     // Conversion helpers
     fn task_to_text(&self, task: &Task) -> String {
         let mut lines = vec![
@@ -121,6 +163,7 @@ impl Storage {
             format!("completed: {}", task.completed),
             format!("created_at: {}", task.created_at.to_rfc3339()),
             format!("updated_at: {}", task.updated_at.to_rfc3339()),
+            format!("is_daily: {}", task.is_daily),
         ];
 
         if let Some(desc) = &task.description {
@@ -144,6 +187,7 @@ impl Storage {
         let mut created_at = None;
         let mut updated_at = None;
         let mut due_date = None;
+        let mut is_daily = false;
 
         for line in text.lines() {
             if let Some((key, value)) = line.split_once(": ") {
@@ -157,6 +201,7 @@ impl Storage {
                     "created_at" => created_at = value.parse().ok(),
                     "updated_at" => updated_at = value.parse().ok(),
                     "due_date" => due_date = value.parse().ok(),
+                    "is_daily" => is_daily = value.parse().unwrap_or(false),
                     _ => {}
                 }
             }
@@ -172,6 +217,7 @@ impl Storage {
             created_at: created_at.context("Missing created_at")?,
             updated_at: updated_at.context("Missing updated_at")?,
             due_date,
+            is_daily,
         })
     }
 

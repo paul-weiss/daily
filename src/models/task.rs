@@ -50,6 +50,7 @@ pub struct Task {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub due_date: Option<DateTime<Utc>>,
+    pub is_daily: bool,
 }
 
 impl Task {
@@ -65,6 +66,7 @@ impl Task {
             created_at: now,
             updated_at: now,
             due_date: None,
+            is_daily: false,
         }
     }
 
@@ -75,6 +77,11 @@ impl Task {
 
     pub fn with_due_date(mut self, due_date: DateTime<Utc>) -> Self {
         self.due_date = Some(due_date);
+        self
+    }
+
+    pub fn with_daily(mut self, is_daily: bool) -> Self {
+        self.is_daily = is_daily;
         self
     }
 
@@ -95,6 +102,11 @@ impl Task {
 
     pub fn update_category(&mut self, category: String) {
         self.category = category;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn update_daily(&mut self, is_daily: bool) {
+        self.is_daily = is_daily;
         self.updated_at = Utc::now();
     }
 }

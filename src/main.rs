@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
             category,
             description,
             due,
+            daily,
         } => {
             let priority = Priority::from_str(&priority)
                 .context("Invalid priority. Use: low, medium, high, or critical")?;
@@ -43,12 +44,19 @@ async fn main() -> Result<()> {
                 task = task.with_due_date(due_datetime);
             }
 
+            if daily {
+                task = task.with_daily(true);
+            }
+
             storage.save_task(&task)?;
             println!("Task added successfully!");
             println!("ID: {}", task.id);
             println!("Title: {}", task.title);
             println!("Priority: {}", task.priority.to_string());
             println!("Category: {}", task.category);
+            if task.is_daily {
+                println!("Type: Daily recurring task");
+            }
         }
 
         Commands::List { category, incomplete, completed } => {
@@ -87,11 +95,13 @@ async fn main() -> Result<()> {
                     }
 
                     let status = if task.completed { "[✓]" } else { "[ ]" };
+                    let daily_indicator = if task.is_daily { " [Daily]" } else { "" };
                     println!(
-                        "{} {} - {} (Priority: {})",
+                        "{} {} - {}{} (Priority: {})",
                         status,
                         task.id[..8].to_string(),
                         task.title,
+                        daily_indicator,
                         task.priority.to_string()
                     );
 
@@ -110,9 +120,18 @@ async fn main() -> Result<()> {
         Commands::Complete { id } => {
             let mut task = storage.load_task(&id)
                 .or_else(|_| find_task_by_prefix(&storage, &id))?;
-            task.mark_complete();
-            storage.save_task(&task)?;
-            println!("Task '{}' marked as complete!", task.title);
+
+            if task.is_daily {
+                // For daily tasks, log completion to daily.log instead of marking as complete
+                let today = Local::now().date_naive();
+                storage.log_daily_completion(&task.id, &task.title, today)?;
+                println!("Daily task '{}' completed for {}!", task.title, today);
+            } else {
+                // For regular tasks, mark as complete
+                task.mark_complete();
+                storage.save_task(&task)?;
+                println!("Task '{}' marked as complete!", task.title);
+            }
         }
 
         Commands::Uncomplete { id } => {
@@ -147,6 +166,18 @@ async fn main() -> Result<()> {
             task.update_category(category.clone());
             storage.save_task(&task)?;
             println!("Task '{}' moved to category '{}'!", task.title, category);
+        }
+
+        Commands::Daily { id, daily } => {
+            let mut task = storage.load_task(&id)
+                .or_else(|_| find_task_by_prefix(&storage, &id))?;
+            task.update_daily(daily);
+            storage.save_task(&task)?;
+            if daily {
+                println!("Task '{}' is now a daily recurring task!", task.title);
+            } else {
+                println!("Task '{}' is no longer a daily recurring task!", task.title);
+            }
         }
 
         Commands::Category { name, description } => {
@@ -251,13 +282,23 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
     // Also collect tasks with due_date matching this date
     let all_tasks = storage.list_all_tasks()?;
     for task in all_tasks {
+        // Skip if already in the list
+        if tasks.iter().any(|t| t.id == task.id) {
+            continue;
+        }
+
+        // Include daily tasks that haven't been completed today
+        if task.is_daily {
+            if !storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false) {
+                tasks.push(task);
+            }
+            continue;
+        }
+
         // Check if the due_date matches this date
         if let Some(due) = task.due_date {
             if due.date_naive() == date {
-                // Add if not already in the list
-                if !tasks.iter().any(|t| t.id == task.id) {
-                    tasks.push(task);
-                }
+                tasks.push(task);
             }
         }
     }
@@ -279,11 +320,13 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
             }
 
             let status = if task.completed { "[✓]" } else { "[ ]" };
+            let daily_indicator = if task.is_daily { " [Daily]" } else { "" };
             println!(
-                "{} {} - {} (Priority: {})",
+                "{} {} - {}{} (Priority: {})",
                 status,
                 &task.id[..8],
                 task.title,
+                daily_indicator,
                 task.priority.to_string()
             );
         }
