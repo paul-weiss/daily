@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::List { category, incomplete, completed } => {
+        Commands::List { category, priority, incomplete, completed } => {
             let mut tasks = if let Some(cat) = category {
                 storage.list_tasks_by_category(&cat)?
             } else {
@@ -68,6 +68,12 @@ async fn main() -> Result<()> {
             };
 
             // Apply filters
+            if let Some(priority_str) = priority {
+                let priority_filter = Priority::from_str(&priority_str)
+                    .context("Invalid priority. Use: low, medium, high, or critical")?;
+                tasks.retain(|t| t.priority == priority_filter);
+            }
+
             if incomplete {
                 tasks.retain(|t| !t.completed);
             } else if completed {

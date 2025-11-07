@@ -42,6 +42,10 @@ pub enum Commands {
         #[arg(short, long)]
         category: Option<String>,
 
+        /// Filter by priority (low, medium, high, critical)
+        #[arg(short, long)]
+        priority: Option<String>,
+
         /// Show only incomplete tasks
         #[arg(short, long)]
         incomplete: bool,
