@@ -67,29 +67,29 @@ daily list -C
 #### Complete/Uncomplete Tasks
 
 ```bash
-# Complete a task (use full ID or first 8 characters)
-daily complete 6c6229cd
+# Complete a task
+daily complete 1
 
 # Mark as incomplete
-daily uncomplete 6c6229cd
+daily uncomplete 1
 ```
 
 #### Update Task Priority
 
 ```bash
-daily priority 6c6229cd critical
+daily priority 1 critical
 ```
 
 #### Move Task to Different Category
 
 ```bash
-daily move 6c6229cd urgent
+daily move 1 urgent
 ```
 
 #### Delete a Task
 
 ```bash
-daily delete 6c6229cd
+daily delete 1
 ```
 
 ### Category Management
@@ -127,7 +127,7 @@ daily day 2025-11-01
 #### Schedule a Task for a Date
 
 ```bash
-daily schedule 6c6229cd 2025-11-01
+daily schedule 1 2025-11-01
 ```
 
 ### Daily Prompt Daemon
@@ -169,7 +169,7 @@ All data is stored as plain text files in `~/.daily/`:
 ### Example Task File
 
 ```
-id: 6c6229cd-7bfa-4903-8ff0-c6a56e447f9e
+id: 1
 title: Fix authentication bug
 priority: Critical
 category: development
@@ -239,13 +239,13 @@ daily today
 daily add "Review security audit" -p high -c work
 
 # Complete a task
-daily complete 6c6229cd
+daily complete 1
 
 # Get AI suggestions
 daily claude "What are my highest priority tasks?"
 
 # Schedule tasks for tomorrow
-daily schedule 982cc507 2025-10-31
+daily schedule 2 2025-10-31
 
 # Evening: Review progress
 daily list -C
