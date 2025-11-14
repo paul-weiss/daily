@@ -265,9 +265,18 @@ daily schedule <task-id> 2025-11-04
 daily claude "Help me plan my week based on these tasks"
 ```
 
+## Inspiration
+
+This application draws inspiration from:
+
+- **Atomic Habits** by James Clear - The philosophy of building better habits through small, consistent daily actions and making task completion visible and rewarding.
+- **The Checklist Manifesto** by Atul Gawande - The power of simple checklists to manage complexity and ensure consistent execution of important tasks.
+
+These principles guide the design of Daily: making it easy to track tasks, prioritize effectively on a daily basis, and build sustainable productivity habits.
+
 ## License
 
-MIT
+Apache 2.0
 
 ## Contributing
 
