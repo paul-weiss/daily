@@ -7,9 +7,14 @@ A powerful, locally-run task management application built in Rust that combines 
 - **Easy CLI Interface**: Add, list, complete, and manage tasks from the command line
 - **Task Priorities**: Four priority levels (Low, Medium, High, Critical)
 - **Categories**: Organize tasks into custom categories
+- **Daily Recurring Tasks**: Track habits and daily activities that repeat every day
 - **Plain Text Storage**: All data stored in human-readable text files at `~/.daily/`
-- **Daily Scheduling**: Structure each day with scheduled tasks
-- **Daily Prompts**: Automated reminders at specified times
+- **Task Scheduling**: Schedule tasks for specific dates and view daily task lists
+- **Due Dates**: Set due dates for tasks and see them in daily views
+- **PDF Export**: Generate printable PDFs of your task lists
+- **Daily Prompts**: Automated reminders at specified times via daemon
+- **Completion History**: Track task completions with timestamped logs
+- **Partial ID Matching**: Reference tasks by ID prefix for faster operations
 - **Claude Integration**: Get AI-powered insights and assistance with your tasks
 
 ## Installation
@@ -44,9 +49,14 @@ daily add "Fix bug" -p high -c development -d "Critical authentication issue"
 
 # With due date
 daily add "Submit report" -p medium -c work -D 2025-11-15
+
+# As a daily recurring task
+daily add "Morning standup" -p medium -c work --daily
 ```
 
 **Priority levels**: `low`, `medium`, `high`, `critical`
+
+**Note**: Daily recurring tasks don't get marked as "completed" permanently. Instead, each completion is logged to track your daily habits. They reappear each day until you remove them.
 
 #### List Tasks
 
@@ -57,12 +67,20 @@ daily list
 # Filter by category
 daily list -c work
 
+# Filter by priority
+daily list -p high
+
+# Filter by both category and priority
+daily list -c work -p critical
+
 # Show only incomplete tasks
 daily list -i
 
 # Show only completed tasks
 daily list -C
 ```
+
+**Note**: Tasks are displayed grouped by category and sorted by priority (highest first). Tasks with ID prefixes can be referenced using partial IDs (e.g., task `abc123` can be referenced as `abc`).
 
 #### Complete/Uncomplete Tasks
 
@@ -72,7 +90,12 @@ daily complete 1
 
 # Mark as incomplete
 daily uncomplete 1
+
+# Mark all tasks as incomplete
+daily uncomplete-all
 ```
+
+**Note**: Completing a daily recurring task logs the completion for that day but doesn't mark it as permanently complete. Regular tasks are marked as complete and logged to the history.
 
 #### Update Task Priority
 
@@ -84,6 +107,16 @@ daily priority 1 critical
 
 ```bash
 daily move 1 urgent
+```
+
+#### Toggle Daily Recurring Status
+
+```bash
+# Make a task daily recurring
+daily daily 1 true
+
+# Remove daily recurring status
+daily daily 1 false
 ```
 
 #### Delete a Task
@@ -124,11 +157,26 @@ daily today
 daily day 2025-11-01
 ```
 
+#### Generate PDF of Today's Tasks
+
+```bash
+# Generate PDF with default filename (~/daily-YYYY-MM-DD.pdf)
+daily today-pdf
+
+# Generate PDF with custom path
+daily today-pdf -o /path/to/output.pdf
+```
+
 #### Schedule a Task for a Date
 
 ```bash
 daily schedule 1 2025-11-01
 ```
+
+**Note**: The `today` and `day` commands show:
+- Tasks scheduled for that specific date
+- Tasks with due dates matching that date
+- Daily recurring tasks that haven't been completed that day
 
 ### Daily Prompt Daemon
 
@@ -162,9 +210,12 @@ export ANTHROPIC_API_KEY="your-api-key-here"
 
 All data is stored as plain text files in `~/.daily/`:
 
-- `tasks/` - Individual task files
-- `days/` - Daily schedule files
+- `tasks/` - Individual task files (one file per task)
+- `days/` - Daily schedule files (one file per date)
 - `categories/` - Category definitions
+- `daily.log` - Completion log for daily recurring tasks
+- `history.log` - Completion log for regular tasks
+- `id_counter.txt` - Counter for generating unique task IDs
 
 ### Example Task File
 
@@ -176,8 +227,23 @@ category: development
 completed: false
 created_at: 2025-10-30T20:30:38.827209+00:00
 updated_at: 2025-10-30T20:30:38.827209+00:00
+is_daily: false
 description: Critical authentication issue
 due_date: 2025-11-15T23:59:59+00:00
+```
+
+### Example Daily Task File
+
+```
+id: 2
+title: Morning standup
+priority: Medium
+category: work
+completed: false
+created_at: 2025-10-30T09:00:00.000000+00:00
+updated_at: 2025-10-30T09:00:00.000000+00:00
+is_daily: true
+description: Daily team standup meeting
 ```
 
 ## Project Structure
@@ -205,6 +271,7 @@ daily/
 - **anyhow**: Error handling
 - **uuid**: Unique ID generation
 - **dirs**: Home directory detection
+- **printpdf**: PDF generation for task lists
 
 ## Development
 
@@ -263,6 +330,24 @@ daily schedule <task-id> 2025-11-04
 
 # Ask Claude for planning help
 daily claude "Help me plan my week based on these tasks"
+```
+
+### Habit Tracking with Daily Tasks
+
+```bash
+# Create daily recurring tasks
+daily add "Exercise" -p high -c health --daily
+daily add "Read for 30 minutes" -p medium -c personal --daily
+daily add "Review goals" -p low -c planning --daily
+
+# Check today's tasks (includes all daily tasks)
+daily today
+
+# Complete daily tasks (they'll reappear tomorrow)
+daily complete <task-id>
+
+# View completion history
+cat ~/.daily/daily.log
 ```
 
 ## Inspiration
