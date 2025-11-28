@@ -12,6 +12,7 @@ use storage::Storage;
 use cli::{Cli, Commands};
 use scheduler::Scheduler;
 use claude::ClaudeClient;
+use rand::seq::SliceRandom;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -60,7 +61,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::List { category, priority, incomplete, completed } => {
+        Commands::List { category, priority, incomplete, completed, random } => {
             let mut tasks = if let Some(cat) = category {
                 storage.list_tasks_by_category(&cat)?
             } else {
@@ -78,6 +79,28 @@ async fn main() -> Result<()> {
                 tasks.retain(|t| !t.completed);
             } else if completed {
                 tasks.retain(|t| t.completed);
+            }
+
+            // If random flag is set, select one random task from each category
+            if random {
+                use std::collections::HashMap;
+                let mut rng = rand::thread_rng();
+
+                // Group tasks by category
+                let mut by_category: HashMap<String, Vec<Task>> = HashMap::new();
+                for task in tasks {
+                    by_category.entry(task.category.clone())
+                        .or_insert_with(Vec::new)
+                        .push(task);
+                }
+
+                // Select one random task from each category
+                tasks = by_category.into_iter()
+                    .filter_map(|(_, mut cat_tasks)| {
+                        cat_tasks.shuffle(&mut rng);
+                        cat_tasks.into_iter().next()
+                    })
+                    .collect();
             }
 
             // Sort by priority (high to low) and then by category

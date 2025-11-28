@@ -53,6 +53,10 @@ pub enum Commands {
         /// Show only completed tasks
         #[arg(short = 'C', long)]
         completed: bool,
+
+        /// Randomly select one task from each category
+        #[arg(short, long)]
+        random: bool,
     },
 
     /// Complete a task
