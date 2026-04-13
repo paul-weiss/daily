@@ -4,6 +4,10 @@ use clap::{Parser, Subcommand};
 #[command(name = "daily")]
 #[command(about = "A CLI task management tool with AI integration", long_about = None)]
 pub struct Cli {
+    /// Override the data directory (default: ~/.daily). Mainly used for testing.
+    #[arg(long, global = true, hide = true)]
+    pub data_dir: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -34,6 +38,26 @@ pub enum Commands {
         /// Daily recurring task
         #[arg(long)]
         daily: bool,
+
+        /// [Atomic Habits] Implementation intention: scheduled time (HH:MM)
+        #[arg(short = 't', long)]
+        time: Option<String>,
+
+        /// [Atomic Habits] Implementation intention: location or context (e.g. "kitchen", "gym")
+        #[arg(short = 'l', long)]
+        location: Option<String>,
+
+        /// [Atomic Habits] Habit stacking: task ID this habit follows
+        #[arg(long)]
+        after: Option<String>,
+
+        /// [Atomic Habits] Two-minute rule: mark as the starter version of a habit
+        #[arg(long)]
+        two_minute: bool,
+
+        /// Days of the week (comma-separated: mon,tue,wed,thu,fri,sat,sun)
+        #[arg(long)]
+        days: Option<String>,
     },
 
     /// List tasks
@@ -80,6 +104,9 @@ pub enum Commands {
         id: String,
     },
 
+    /// Delete all tasks
+    DeleteAll,
+
     /// Update task priority
     Priority {
         /// Task ID
@@ -104,6 +131,7 @@ pub enum Commands {
         id: String,
 
         /// Set as daily task (true/false)
+        #[arg(value_parser = clap::builder::BoolishValueParser::new(), action = clap::ArgAction::Set)]
         daily: bool,
     },
 
@@ -115,6 +143,10 @@ pub enum Commands {
         /// Category description
         #[arg(short, long)]
         description: Option<String>,
+
+        /// [Atomic Habits] Identity statement for this category (e.g. "I am someone who exercises daily")
+        #[arg(short, long)]
+        identity: Option<String>,
     },
 
     /// List all categories
@@ -150,6 +182,30 @@ pub enum Commands {
         /// Time to show daily prompt (HH:MM format, 24-hour)
         #[arg(short, long, default_value = "09:00")]
         time: String,
+    },
+
+    /// [Atomic Habits] Show streak counts for daily habits
+    Streak {
+        /// Task ID (optional — shows all daily tasks if omitted)
+        id: Option<String>,
+    },
+
+    /// [Atomic Habits] Show visual habit grid for daily tasks
+    Habits {
+        /// Number of days to display (default: 21)
+        #[arg(short, long, default_value = "21")]
+        days: u32,
+    },
+
+    /// [Atomic Habits] Natural language habit/task planning via Claude AI
+    ///
+    /// Examples:
+    ///   daily plan "do yoga mon, wed, fri at 7am in the living room"
+    ///   daily plan "meditate every day at 6:30am after making coffee"
+    ///   daily plan "read 30 minutes on weeknights at 9pm"
+    Plan {
+        /// Natural language description of the habit or task to create
+        prompt: String,
     },
 
     /// Interact with Claude AI

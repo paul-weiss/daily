@@ -5,7 +5,7 @@ mod scheduler;
 mod claude;
 
 use anyhow::{Context, Result};
-use chrono::{Local, NaiveDate};
+use chrono::{Datelike, Local, NaiveDate};
 use clap::Parser;
 use models::{Priority, Task, Category};
 use storage::Storage;
@@ -17,7 +17,12 @@ use rand::seq::SliceRandom;
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let storage = Storage::new(Storage::default_dir()?)?;
+    let data_dir = if let Some(ref dir) = cli.data_dir {
+        std::path::PathBuf::from(dir)
+    } else {
+        Storage::default_dir()?
+    };
+    let storage = Storage::new(data_dir)?;
 
     match cli.command {
         Commands::Add {
@@ -27,6 +32,11 @@ async fn main() -> Result<()> {
             description,
             due,
             daily,
+            time,
+            location,
+            after,
+            two_minute,
+            days,
         } => {
             let priority = Priority::from_str(&priority)
                 .context("Invalid priority. Use: low, medium, high, or critical")?;
@@ -50,6 +60,29 @@ async fn main() -> Result<()> {
                 task = task.with_daily(true);
             }
 
+            if let Some(t) = time {
+                task = task.with_scheduled_time(t);
+            }
+
+            if let Some(loc) = location {
+                task = task.with_location(loc);
+            }
+
+            if let Some(after_id) = after {
+                task = task.with_habit_stack_after(after_id);
+            }
+
+            if two_minute {
+                task = task.with_two_minute(true);
+            }
+
+            if let Some(days_str) = days {
+                let nums: Vec<u8> = days_str.split(',')
+                    .filter_map(|d| claude::day_str_to_num(d.trim()))
+                    .collect();
+                task = task.with_scheduled_days(nums);
+            }
+
             storage.save_task(&task)?;
             println!("Task added successfully!");
             println!("ID: {}", task.id);
@@ -58,6 +91,18 @@ async fn main() -> Result<()> {
             println!("Category: {}", task.category);
             if task.is_daily {
                 println!("Type: Daily recurring task");
+            }
+            if let Some(ref t) = task.scheduled_time {
+                println!("When: {}", t);
+            }
+            if let Some(ref loc) = task.location {
+                println!("Where: {}", loc);
+            }
+            if let Some(ref after) = task.habit_stack_after {
+                println!("After: task {}", after);
+            }
+            if task.two_minute {
+                println!("Two-minute rule: yes (starter version)");
             }
         }
 
@@ -156,6 +201,23 @@ async fn main() -> Result<()> {
                 let today = Local::now().date_naive();
                 storage.log_daily_completion(&task.id, &task.title, today)?;
                 println!("Daily task '{}' completed for {}!", task.title, today);
+
+                // Atomic Habits: Make it Satisfying — show streak
+                let streak = storage.get_streak_for_task(&task.id, today)?;
+                if streak == 1 {
+                    println!("Day 1 — every streak starts here. Keep going!");
+                } else if streak > 1 {
+                    println!("Streak: {} days — don't break the chain!", streak);
+                }
+
+                // Show identity reinforcement if category has one
+                if let Ok(cats) = storage.list_categories() {
+                    if let Some(cat) = cats.iter().find(|c| c.name == task.category) {
+                        if let Some(ref identity) = cat.identity {
+                            println!("Identity: {}", identity);
+                        }
+                    }
+                }
             } else {
                 // For regular tasks, mark as complete and log to history
                 task.mark_complete();
@@ -194,6 +256,15 @@ async fn main() -> Result<()> {
             println!("Task '{}' deleted!", title);
         }
 
+        Commands::DeleteAll => {
+            let tasks = storage.list_all_tasks()?;
+            let count = tasks.len();
+            for task in tasks {
+                storage.delete_task(&task.id)?;
+            }
+            println!("{} task(s) deleted.", count);
+        }
+
         Commands::Priority { id, priority } => {
             let mut task = storage.load_task(&id)
                 .or_else(|_| find_task_by_prefix(&storage, &id))?;
@@ -224,10 +295,13 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Category { name, description } => {
+        Commands::Category { name, description, identity } => {
             let mut category = Category::new(name.clone());
             if let Some(desc) = description {
                 category = category.with_description(desc);
+            }
+            if let Some(id_stmt) = identity {
+                category = category.with_identity(id_stmt);
             }
             storage.save_category(&category)?;
             println!("Category '{}' created!", name);
@@ -290,6 +364,168 @@ async fn main() -> Result<()> {
 
             let scheduler = Scheduler::new(&time)?;
             scheduler.run().await?;
+        }
+
+        Commands::Streak { id } => {
+            let today = Local::now().date_naive();
+            let daily_tasks: Vec<_> = storage.list_all_tasks()?
+                .into_iter()
+                .filter(|t| t.is_daily)
+                .collect();
+
+            if daily_tasks.is_empty() {
+                println!("No daily habits found. Add one with: daily add \"habit\" --daily");
+            } else {
+                let tasks_to_show: Vec<_> = if let Some(ref task_id) = id {
+                    daily_tasks.iter()
+                        .filter(|t| t.id.starts_with(task_id.as_str()))
+                        .collect()
+                } else {
+                    daily_tasks.iter().collect()
+                };
+
+                println!("\n=== HABIT STREAKS ===\n");
+                for task in tasks_to_show {
+                    // Streak as of yesterday (today may not be done yet)
+                    let yesterday = today.pred_opt().unwrap_or(today);
+                    let streak = storage.get_streak_for_task(&task.id, yesterday)?;
+                    let done_today = storage.is_daily_completed_on_date(&task.id, today)?;
+
+                    let streak_label = if done_today {
+                        let today_streak = storage.get_streak_for_task(&task.id, today)?;
+                        format!("{} days", today_streak)
+                    } else if streak > 0 {
+                        format!("{} days (not done today)", streak)
+                    } else {
+                        "no streak yet".to_string()
+                    };
+
+                    let status = if done_today { "[done]" } else { "[todo]" };
+                    println!("{} {} — Streak: {}", status, task.title, streak_label);
+                }
+                println!();
+            }
+        }
+
+        Commands::Habits { days } => {
+            let today = Local::now().date_naive();
+            let daily_tasks: Vec<_> = storage.list_all_tasks()?
+                .into_iter()
+                .filter(|t| t.is_daily)
+                .collect();
+
+            if daily_tasks.is_empty() {
+                println!("No daily habits found. Add one with: daily add \"habit\" --daily");
+            } else {
+                // Build date header
+                println!("\n=== HABIT TRACKER (last {} days) ===\n", days);
+
+                // Find longest title for alignment
+                let max_len = daily_tasks.iter().map(|t| t.title.len()).max().unwrap_or(10);
+
+                for task in &daily_tasks {
+                    let grid = storage.get_habit_grid(&task.id, today, days)?;
+                    let grid_str: String = grid.iter()
+                        .map(|&done| if done { "[+]" } else { "[ ]" })
+                        .collect::<Vec<_>>()
+                        .join("");
+
+                    let yesterday = today.pred_opt().unwrap_or(today);
+                    let streak = storage.get_streak_for_task(&task.id, yesterday)?;
+                    let done_today = storage.is_daily_completed_on_date(&task.id, today)?;
+                    let current_streak = if done_today {
+                        storage.get_streak_for_task(&task.id, today)?
+                    } else {
+                        streak
+                    };
+
+                    let streak_badge = if current_streak >= 7 {
+                        format!("  {} days", current_streak)
+                    } else if current_streak > 0 {
+                        format!("  {} day{}", current_streak, if current_streak == 1 { "" } else { "s" })
+                    } else {
+                        "  —".to_string()
+                    };
+
+                    println!(
+                        "{:<width$}  {}{}",
+                        task.title,
+                        grid_str,
+                        streak_badge,
+                        width = max_len
+                    );
+                }
+                println!();
+                println!("[+] = completed  [ ] = missed");
+                println!();
+            }
+        }
+
+        Commands::Plan { prompt } => {
+            let client = ClaudeClient::new()
+                .context("Failed to initialize Claude client. Make sure ANTHROPIC_API_KEY is set.")?;
+
+            let tasks = storage.list_all_tasks()?;
+            let today = Local::now().date_naive();
+
+            println!("Planning...\n");
+
+            let plan = client.plan_from_natural_language(&prompt, &tasks, today).await?;
+
+            println!("{}\n", plan.explanation);
+
+            for action in plan.actions {
+                match action.action_type.as_str() {
+                    "create_habit" => {
+                        let task_id = storage.get_next_task_id()?;
+                        let priority = action.priority.as_deref()
+                            .and_then(Priority::from_str)
+                            .unwrap_or(Priority::Medium);
+                        let category = action.category.clone().unwrap_or_else(|| "default".to_string());
+
+                        let mut task = Task::new(task_id, action.title.clone(), priority, category);
+                        task = task.with_daily(true);
+
+                        if let Some(days_nums) = action.scheduled_days_as_nums() {
+                            task = task.with_scheduled_days(days_nums);
+                        }
+                        if let Some(t) = action.scheduled_time {
+                            task = task.with_scheduled_time(t);
+                        }
+                        if let Some(loc) = action.location {
+                            task = task.with_location(loc);
+                        }
+                        if action.two_minute.unwrap_or(false) {
+                            task = task.with_two_minute(true);
+                        }
+                        if let Some(desc) = action.description {
+                            task = task.with_description(desc);
+                        }
+                        if let Some(after_id) = action.habit_stack_after {
+                            task = task.with_habit_stack_after(after_id);
+                        }
+
+                        storage.save_task(&task)?;
+
+                        println!("Created habit: '{}' (ID: {})", task.title, task.id);
+                        if let Some(days_str) = task.scheduled_days_display() {
+                            println!("  Days: {}", days_str);
+                        } else {
+                            println!("  Days: every day");
+                        }
+                        if let Some(ref t) = task.scheduled_time {
+                            println!("  Time: {}", t);
+                        }
+                        if let Some(ref loc) = task.location {
+                            println!("  Where: {}", loc);
+                        }
+                        println!("  Category: {}", task.category);
+                    }
+                    other => {
+                        println!("Unknown action type '{}' — skipping.", other);
+                    }
+                }
+            }
         }
 
         Commands::Claude { prompt } => {
@@ -460,9 +696,16 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
             continue;
         }
 
-        // Include daily tasks that haven't been completed today
+        // Include daily tasks that are scheduled for this day of the week
         if task.is_daily {
-            if !storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false) {
+            let include = match &task.scheduled_days {
+                None => true, // every day
+                Some(days) => {
+                    let weekday = date.weekday().num_days_from_monday() as u8;
+                    days.contains(&weekday)
+                }
+            };
+            if include {
                 tasks.push(task);
             }
             continue;
@@ -479,29 +722,72 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
     if tasks.is_empty() {
         println!("No tasks scheduled for this day.");
     } else {
-        // Sort by category and priority
+        // Sort: daily first by time, then by category and priority
         tasks.sort_by(|a, b| {
-            a.category.cmp(&b.category)
+            b.is_daily.cmp(&a.is_daily)
+                .then(a.scheduled_time.cmp(&b.scheduled_time))
+                .then(a.category.cmp(&b.category))
                 .then(b.priority.value().cmp(&a.priority.value()))
         });
 
         let mut current_category = String::new();
-        for task in tasks {
+        for task in &tasks {
             if task.category != current_category {
                 println!("\n=== {} ===", task.category.to_uppercase());
                 current_category = task.category.clone();
             }
 
-            let status = if task.completed { "[✓]" } else { "[ ]" };
-            let daily_indicator = if task.is_daily { " [Daily]" } else { "" };
+            let done_today = if task.is_daily {
+                storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false)
+            } else {
+                task.completed
+            };
+            let status = if done_today { "[+]" } else { "[ ]" };
+
+            // Build implementation intention hint
+            let mut intention = String::new();
+            if let Some(ref t) = task.scheduled_time {
+                intention.push_str(&format!(" @ {}", t));
+            }
+            if let Some(ref loc) = task.location {
+                intention.push_str(&format!(" in {}", loc));
+            }
+
+            let two_min_marker = if task.two_minute { " [2min]" } else { "" };
+            let days_marker = task.scheduled_days_display()
+                .map(|d| format!(" ({})", d))
+                .unwrap_or_default();
+
             println!(
-                "{} {} - {}{} (Priority: {})",
+                "{} [{}] {}{}{}{}",
                 status,
                 task.id,
                 task.title,
-                daily_indicator,
-                task.priority.to_string()
+                intention,
+                days_marker,
+                two_min_marker,
             );
+
+            // Habit stacking cue
+            if let Some(ref after_id) = task.habit_stack_after {
+                if let Ok(anchor) = storage.load_task(after_id) {
+                    println!("     -> After: {}", anchor.title);
+                }
+            }
+
+            // Streak for daily habits
+            if task.is_daily {
+                let yesterday = date.pred_opt().unwrap_or(date);
+                let streak = storage.get_streak_for_task(&task.id, yesterday)?;
+                if done_today {
+                    let today_streak = storage.get_streak_for_task(&task.id, date)?;
+                    if today_streak > 0 {
+                        println!("     Streak: {} day{}", today_streak, if today_streak == 1 { "" } else { "s" });
+                    }
+                } else if streak > 0 {
+                    println!("     Streak: {} day{} — keep it going!", streak, if streak == 1 { "" } else { "s" });
+                }
+            }
         }
         println!();
     }
