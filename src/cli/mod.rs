@@ -153,7 +153,15 @@ pub enum Commands {
     Categories,
 
     /// Show tasks for today
-    Today,
+    Today {
+        /// Show only completed tasks
+        #[arg(short = 'c', long)]
+        completed: bool,
+
+        /// Show all tasks (including completed)
+        #[arg(short = 'a', long)]
+        all: bool,
+    },
 
     /// Show tasks for a specific date
     Day {

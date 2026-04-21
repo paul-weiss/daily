@@ -322,14 +322,15 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Today => {
+        Commands::Today { completed, all } => {
             let today = Local::now().date_naive();
-            show_day_tasks(&storage, today)?;
+            let filter = if all { DayFilter::All } else if completed { DayFilter::Completed } else { DayFilter::Incomplete };
+            show_day_tasks(&storage, today, filter)?;
         }
 
         Commands::Day { date } => {
             let date = NaiveDate::parse_from_str(&date, "%Y-%m-%d")?;
-            show_day_tasks(&storage, date)?;
+            show_day_tasks(&storage, date, DayFilter::Incomplete)?;
         }
 
         Commands::TodayPdf { output } => {
@@ -677,7 +678,9 @@ fn find_task_by_prefix(storage: &Storage, prefix: &str) -> Result<Task> {
     }
 }
 
-fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
+enum DayFilter { Incomplete, Completed, All }
+
+fn show_day_tasks(storage: &Storage, date: NaiveDate, filter: DayFilter) -> Result<()> {
     let day = storage.load_day(date)?;
 
     println!("\nTasks for {}:\n", date);
@@ -717,6 +720,24 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate) -> Result<()> {
                 tasks.push(task);
             }
         }
+    }
+
+    match filter {
+        DayFilter::All => {}
+        DayFilter::Completed => tasks.retain(|task| {
+            if task.is_daily {
+                storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false)
+            } else {
+                task.completed
+            }
+        }),
+        DayFilter::Incomplete => tasks.retain(|task| {
+            if task.is_daily {
+                !storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false)
+            } else {
+                !task.completed
+            }
+        }),
     }
 
     if tasks.is_empty() {
