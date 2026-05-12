@@ -9,6 +9,7 @@ A locally-run task management tool built in Rust that combines simple CLI operat
 - **Categories with Identity**: Organize tasks into categories anchored to identity statements
 - **Daily Recurring Tasks**: Track habits that repeat every day
 - **Atomic Habits Integration**: Implementation intentions, habit stacking, two-minute rule, streak tracking, and visual habit grids
+- **Numeric Habit Tracking**: Track quantities (reps, minutes, pages) instead of just done/not-done, with daily totals and targets
 - **Plain Text Storage**: All data stored in human-readable text files at `~/.daily/`
 - **Task Scheduling**: Schedule tasks for specific dates and view daily task lists
 - **Due Dates**: Set due dates for tasks and see them in daily views
@@ -203,6 +204,9 @@ daily add "Morning run" --daily -t 06:30 -l "front door" -c health
 | `-l, --location <place>` | Implementation intention: location or context |
 | `--after <task-id>` | Habit stacking: task ID this habit follows |
 | `--two-minute` | Two-minute rule: marks the starter version of a habit |
+| `--numeric` | Enable numeric tracking (quantities instead of done/not-done) |
+| `--unit <label>` | Unit label for numeric tasks (e.g. `reps`, `minutes`, `pages`) |
+| `--target <number>` | Daily target for numeric tasks (e.g. `100`) |
 
 #### List Tasks
 
@@ -224,6 +228,41 @@ daily list -C
 
 # Random task from each category (for variety)
 daily list -r
+```
+
+#### Numeric Habit Tracking
+
+For habits where you want to track a quantity each day rather than a binary done/not-done:
+
+```bash
+# Create a numeric daily habit
+daily add "Push ups" --daily --numeric --unit reps --target 100
+daily add "Reading" --daily --numeric --unit minutes --target 30
+daily add "Drink water" --daily --numeric --unit glasses --target 8
+
+# Log progress — can call multiple times, totals accumulate
+daily complete <id> 25        # logs 25 reps
+daily complete <id> +30       # logs 30 more (same as 30, the + is optional)
+```
+
+Output after logging:
+```
+'Push ups': 55 reps logged today.
+Progress: 55/100 reps (55%)
+Streak: 3 days — keep it going!
+```
+
+Once the target is reached:
+```
+Target reached! 100/100 reps
+Streak: 4 days — keep it going!
+```
+
+The `today` view shows the running total and target inline for any numeric habit that has progress logged:
+```
+[ ] [2] Push ups
+     55/100 reps
+     Streak: 3 days — keep it going!
 ```
 
 #### Complete / Uncomplete Tasks
@@ -330,7 +369,14 @@ Meditate       [+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+][+]  
 #### View Today's Tasks
 
 ```bash
+# Default: incomplete one-off tasks + all daily habits
 daily today
+
+# Show only completed tasks
+daily today --completed
+
+# Show everything (completed and incomplete)
+daily today --all
 ```
 
 The `today` view groups habits by category and shows:
@@ -338,6 +384,7 @@ The `today` view groups habits by category and shows:
 - Habit stacking cues (→ After: ...)
 - Two-minute markers (`[2min]`)
 - Live streak counts
+- Numeric totals and targets for numeric habits
 
 #### View Tasks for a Specific Date
 
@@ -533,6 +580,23 @@ scheduled_days: 0,2,4
 `scheduled_days` stores weekday numbers: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun.
 Omitting it means the habit runs every day.
 
+Numeric habits include additional fields:
+
+```
+id: 7
+title: Push ups
+priority: Medium
+category: fitness
+completed: false
+created_at: 2026-05-01T06:00:00+00:00
+updated_at: 2026-05-01T06:00:00+00:00
+is_daily: true
+two_minute: false
+numeric: true
+unit: reps
+target: 100
+```
+
 ### Example Category File
 
 ```
@@ -600,7 +664,7 @@ cargo clippy
 | Make it Obvious | Implementation intentions, habit stacking | `--time`, `--location`, `--after` |
 | Make it Attractive | Identity-based motivation | `--identity` on categories |
 | Make it Easy | Reduce friction to starting | `--two-minute` flag |
-| Make it Satisfying | Immediate, visible reward | `streak`, `habits` grid |
+| Make it Satisfying | Immediate, visible reward | `streak`, `habits` grid, numeric totals |
 
 The core insight: you do not rise to the level of your goals, you fall to the level of your systems. This tool is a system.
 

@@ -115,9 +115,12 @@ impl Storage {
     }
 
     // Daily task log operations
-    pub fn log_daily_completion(&self, task_id: &str, task_title: &str, date: NaiveDate) -> Result<()> {
+    pub fn log_daily_completion(&self, task_id: &str, task_title: &str, date: NaiveDate, value: Option<f64>) -> Result<()> {
         let log_path = self.data_dir.join("daily.log");
-        let log_entry = format!("{} | {} | {}\n", date, task_id, task_title);
+        let log_entry = match value {
+            Some(v) => format!("{} | {} | {} | {}\n", date, task_id, task_title, v),
+            None => format!("{} | {} | {}\n", date, task_id, task_title),
+        };
 
         use std::fs::OpenOptions;
         use std::io::Write;
@@ -129,6 +132,25 @@ impl Storage {
 
         file.write_all(log_entry.as_bytes())?;
         Ok(())
+    }
+
+    pub fn get_daily_numeric_total(&self, task_id: &str, date: NaiveDate) -> Result<f64> {
+        let log_path = self.data_dir.join("daily.log");
+        if !log_path.exists() {
+            return Ok(0.0);
+        }
+        let content = fs::read_to_string(log_path)?;
+        let date_str = date.to_string();
+        let mut total = 0.0f64;
+        for line in content.lines() {
+            let parts: Vec<&str> = line.splitn(4, " | ").collect();
+            if parts.len() >= 4 && parts[0] == date_str && parts[1] == task_id {
+                if let Ok(v) = parts[3].trim().parse::<f64>() {
+                    total += v;
+                }
+            }
+        }
+        Ok(total)
     }
 
     pub fn is_daily_completed_on_date(&self, task_id: &str, date: NaiveDate) -> Result<bool> {
@@ -239,6 +261,18 @@ impl Storage {
             lines.push(format!("scheduled_days: {}", s.join(",")));
         }
 
+        if task.numeric {
+            lines.push("numeric: true".to_string());
+        }
+
+        if let Some(unit) = &task.unit {
+            lines.push(format!("unit: {}", unit));
+        }
+
+        if let Some(target) = &task.target {
+            lines.push(format!("target: {}", target));
+        }
+
         lines.join("\n")
     }
 
@@ -258,6 +292,9 @@ impl Storage {
         let mut habit_stack_after = None;
         let mut two_minute = false;
         let mut scheduled_days: Option<Vec<u8>> = None;
+        let mut numeric = false;
+        let mut unit: Option<String> = None;
+        let mut target: Option<f64> = None;
 
         for line in text.lines() {
             if let Some((key, value)) = line.split_once(": ") {
@@ -284,6 +321,9 @@ impl Storage {
                             scheduled_days = Some(nums);
                         }
                     }
+                    "numeric" => numeric = value.parse().unwrap_or(false),
+                    "unit" => unit = Some(value.to_string()),
+                    "target" => target = value.parse().ok(),
                     _ => {}
                 }
             }
@@ -305,6 +345,9 @@ impl Storage {
             habit_stack_after,
             two_minute,
             scheduled_days,
+            numeric,
+            unit,
+            target,
         })
     }
 
@@ -643,7 +686,7 @@ mod tests {
     fn test_log_and_check_daily_completion() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
         assert!(s.is_daily_completed_on_date("t1", d).unwrap());
     }
 
@@ -651,7 +694,7 @@ mod tests {
     fn test_daily_completion_wrong_id_not_matched() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
         assert!(!s.is_daily_completed_on_date("t2", d).unwrap());
     }
 
@@ -659,7 +702,7 @@ mod tests {
     fn test_daily_completion_wrong_date_not_matched() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
         assert!(!s.is_daily_completed_on_date("t1", date(2026, 4, 14)).unwrap());
     }
 
@@ -667,8 +710,8 @@ mod tests {
     fn test_daily_completion_multiple_tasks_same_day() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
-        s.log_daily_completion("t2", "Read", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
+        s.log_daily_completion("t2", "Read", d, None).unwrap();
         assert!(s.is_daily_completed_on_date("t1", d).unwrap());
         assert!(s.is_daily_completed_on_date("t2", d).unwrap());
     }
@@ -710,7 +753,7 @@ mod tests {
     fn test_streak_one_day() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
         assert_eq!(s.get_streak_for_task("t1", d).unwrap(), 1);
     }
 
@@ -719,7 +762,7 @@ mod tests {
         let (_dir, s) = test_storage();
         let today = date(2026, 4, 13);
         for i in 0..5 {
-            s.log_daily_completion("t1", "Run", today - chrono::Duration::days(i)).unwrap();
+            s.log_daily_completion("t1", "Run", today - chrono::Duration::days(i), None).unwrap();
         }
         assert_eq!(s.get_streak_for_task("t1", today).unwrap(), 5);
     }
@@ -729,9 +772,9 @@ mod tests {
         let (_dir, s) = test_storage();
         let today = date(2026, 4, 13);
         // Complete today and yesterday, gap on -2, then -3
-        s.log_daily_completion("t1", "Run", today).unwrap();
-        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(1)).unwrap();
-        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(3)).unwrap();
+        s.log_daily_completion("t1", "Run", today, None).unwrap();
+        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(1), None).unwrap();
+        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(3), None).unwrap();
         assert_eq!(s.get_streak_for_task("t1", today).unwrap(), 2);
     }
 
@@ -739,7 +782,7 @@ mod tests {
     fn test_streak_ignores_other_task() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t2", "Read", d).unwrap();
+        s.log_daily_completion("t2", "Read", d, None).unwrap();
         assert_eq!(s.get_streak_for_task("t1", d).unwrap(), 0);
     }
 
@@ -757,7 +800,7 @@ mod tests {
     fn test_habit_grid_single_day_true() {
         let (_dir, s) = test_storage();
         let d = date(2026, 4, 13);
-        s.log_daily_completion("t1", "Run", d).unwrap();
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
         let grid = s.get_habit_grid("t1", d, 1).unwrap();
         assert_eq!(grid, vec![true]);
     }
@@ -767,8 +810,8 @@ mod tests {
         let (_dir, s) = test_storage();
         let today = date(2026, 4, 13);
         // Complete today (index 6) and 2 days ago (index 4) in a 7-day window
-        s.log_daily_completion("t1", "Run", today).unwrap();
-        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(2)).unwrap();
+        s.log_daily_completion("t1", "Run", today, None).unwrap();
+        s.log_daily_completion("t1", "Run", today - chrono::Duration::days(2), None).unwrap();
         let grid = s.get_habit_grid("t1", today, 7).unwrap();
         assert_eq!(grid.len(), 7);
         assert!(grid[6]);  // today
@@ -784,5 +827,81 @@ mod tests {
         assert_eq!(s.get_habit_grid("t1", d, 14).unwrap().len(), 14);
         assert_eq!(s.get_habit_grid("t1", d, 21).unwrap().len(), 21);
         assert_eq!(s.get_habit_grid("t1", d, 1).unwrap().len(), 1);
+    }
+
+    // --- numeric total ---
+
+    #[test]
+    fn test_numeric_total_no_log_returns_zero() {
+        let (_dir, s) = test_storage();
+        assert_eq!(s.get_daily_numeric_total("t1", date(2026, 4, 13)).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_numeric_total_single_entry() {
+        let (_dir, s) = test_storage();
+        let d = date(2026, 4, 13);
+        s.log_daily_completion("t1", "Push ups", d, Some(25.0)).unwrap();
+        assert_eq!(s.get_daily_numeric_total("t1", d).unwrap(), 25.0);
+    }
+
+    #[test]
+    fn test_numeric_total_accumulates() {
+        let (_dir, s) = test_storage();
+        let d = date(2026, 4, 13);
+        s.log_daily_completion("t1", "Push ups", d, Some(25.0)).unwrap();
+        s.log_daily_completion("t1", "Push ups", d, Some(4.0)).unwrap();
+        assert_eq!(s.get_daily_numeric_total("t1", d).unwrap(), 29.0);
+    }
+
+    #[test]
+    fn test_numeric_total_ignores_other_task() {
+        let (_dir, s) = test_storage();
+        let d = date(2026, 4, 13);
+        s.log_daily_completion("t2", "Squats", d, Some(50.0)).unwrap();
+        assert_eq!(s.get_daily_numeric_total("t1", d).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_numeric_total_ignores_other_date() {
+        let (_dir, s) = test_storage();
+        let d = date(2026, 4, 13);
+        s.log_daily_completion("t1", "Push ups", d, Some(25.0)).unwrap();
+        assert_eq!(s.get_daily_numeric_total("t1", date(2026, 4, 14)).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_numeric_total_boolean_entry_contributes_zero() {
+        let (_dir, s) = test_storage();
+        let d = date(2026, 4, 13);
+        s.log_daily_completion("t1", "Run", d, None).unwrap();
+        assert_eq!(s.get_daily_numeric_total("t1", d).unwrap(), 0.0);
+    }
+
+    // --- numeric task roundtrip ---
+
+    #[test]
+    fn test_numeric_task_fields_roundtrip() {
+        let (_dir, s) = test_storage();
+        let t = task("1", "Push ups")
+            .with_numeric(true)
+            .with_unit("reps".to_string())
+            .with_target(100.0);
+        s.save_task(&t).unwrap();
+        let loaded = s.load_task("1").unwrap();
+        assert!(loaded.numeric);
+        assert_eq!(loaded.unit, Some("reps".to_string()));
+        assert_eq!(loaded.target, Some(100.0));
+    }
+
+    #[test]
+    fn test_non_numeric_task_defaults() {
+        let (_dir, s) = test_storage();
+        let t = task("1", "Read book");
+        s.save_task(&t).unwrap();
+        let loaded = s.load_task("1").unwrap();
+        assert!(!loaded.numeric);
+        assert!(loaded.unit.is_none());
+        assert!(loaded.target.is_none());
     }
 }

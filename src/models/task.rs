@@ -59,6 +59,10 @@ pub struct Task {
     pub two_minute: bool,                   // two-minute rule: starter version of habit
     // Selective recurrence: which weekdays (0=Mon..6=Sun); None means every day
     pub scheduled_days: Option<Vec<u8>>,
+    // Numeric tracking (e.g. push ups, minutes read)
+    pub numeric: bool,
+    pub unit: Option<String>,
+    pub target: Option<f64>,
 }
 
 impl Task {
@@ -80,6 +84,9 @@ impl Task {
             habit_stack_after: None,
             two_minute: false,
             scheduled_days: None,
+            numeric: false,
+            unit: None,
+            target: None,
         }
     }
 
@@ -145,6 +152,21 @@ impl Task {
 
     pub fn with_scheduled_days(mut self, days: Vec<u8>) -> Self {
         self.scheduled_days = if days.is_empty() { None } else { Some(days) };
+        self
+    }
+
+    pub fn with_numeric(mut self, numeric: bool) -> Self {
+        self.numeric = numeric;
+        self
+    }
+
+    pub fn with_unit(mut self, unit: String) -> Self {
+        self.unit = Some(unit);
+        self
+    }
+
+    pub fn with_target(mut self, target: f64) -> Self {
+        self.target = Some(target);
         self
     }
 

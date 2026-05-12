@@ -58,6 +58,18 @@ pub enum Commands {
         /// Days of the week (comma-separated: mon,tue,wed,thu,fri,sat,sun)
         #[arg(long)]
         days: Option<String>,
+
+        /// Enable numeric tracking (e.g. count reps, minutes, pages)
+        #[arg(long)]
+        numeric: bool,
+
+        /// Unit label for numeric tasks (e.g. reps, minutes, pages)
+        #[arg(long)]
+        unit: Option<String>,
+
+        /// Daily target for numeric tasks (e.g. 100)
+        #[arg(long)]
+        target: Option<f64>,
     },
 
     /// List tasks
@@ -87,6 +99,9 @@ pub enum Commands {
     Complete {
         /// Task ID
         id: String,
+
+        /// Amount to record for numeric tasks (e.g. 25 or +4 to add more)
+        amount: Option<String>,
     },
 
     /// Uncomplete a task

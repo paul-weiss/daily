@@ -37,6 +37,9 @@ async fn main() -> Result<()> {
             after,
             two_minute,
             days,
+            numeric,
+            unit,
+            target,
         } => {
             let priority = Priority::from_str(&priority)
                 .context("Invalid priority. Use: low, medium, high, or critical")?;
@@ -83,6 +86,18 @@ async fn main() -> Result<()> {
                 task = task.with_scheduled_days(nums);
             }
 
+            if numeric {
+                task = task.with_numeric(true);
+            }
+
+            if let Some(u) = unit {
+                task = task.with_unit(u);
+            }
+
+            if let Some(t) = target {
+                task = task.with_target(t);
+            }
+
             storage.save_task(&task)?;
             println!("Task added successfully!");
             println!("ID: {}", task.id);
@@ -91,6 +106,14 @@ async fn main() -> Result<()> {
             println!("Category: {}", task.category);
             if task.is_daily {
                 println!("Type: Daily recurring task");
+            }
+            if task.numeric {
+                let unit_str = task.unit.as_deref().unwrap_or("units");
+                if let Some(t) = task.target {
+                    println!("Tracking: numeric ({}, target: {})", unit_str, t);
+                } else {
+                    println!("Tracking: numeric ({})", unit_str);
+                }
             }
             if let Some(ref t) = task.scheduled_time {
                 println!("When: {}", t);
@@ -192,15 +215,45 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Complete { id } => {
+        Commands::Complete { id, amount } => {
             let mut task = storage.load_task(&id)
                 .or_else(|_| find_task_by_prefix(&storage, &id))?;
 
             if task.is_daily {
-                // For daily tasks, log completion to daily.log instead of marking as complete
                 let today = Local::now().date_naive();
-                storage.log_daily_completion(&task.id, &task.title, today)?;
-                println!("Daily task '{}' completed for {}!", task.title, today);
+
+                let numeric_value = if task.numeric {
+                    let amt_str = amount.as_deref().unwrap_or("");
+                    if amt_str.is_empty() {
+                        anyhow::bail!(
+                            "Task '{}' tracks numeric values. Provide an amount, e.g.: daily complete {} 25",
+                            task.title, task.id
+                        );
+                    }
+                    let stripped = amt_str.trim_start_matches('+');
+                    let v: f64 = stripped.parse()
+                        .context("Invalid amount — expected a number like 25 or +4")?;
+                    Some(v)
+                } else {
+                    None
+                };
+
+                storage.log_daily_completion(&task.id, &task.title, today, numeric_value)?;
+
+                if task.numeric {
+                    let total = storage.get_daily_numeric_total(&task.id, today)?;
+                    let unit = task.unit.as_deref().unwrap_or("units");
+                    println!("'{}': {} {} logged today.", task.title, total, unit);
+                    if let Some(tgt) = task.target {
+                        if total >= tgt {
+                            println!("Target reached! {:.0}/{:.0} {}", total, tgt, unit);
+                        } else {
+                            println!("Progress: {:.0}/{:.0} {} ({:.0}%)", total, tgt, unit, total / tgt * 100.0);
+                        }
+                    }
+                } else {
+                    println!("Daily task '{}' completed for {}!", task.title, today);
+                }
 
                 // Atomic Habits: Make it Satisfying — show streak
                 let streak = storage.get_streak_for_task(&task.id, today)?;
@@ -733,7 +786,7 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate, filter: DayFilter) -> Resu
         }),
         DayFilter::Incomplete => tasks.retain(|task| {
             if task.is_daily {
-                !storage.is_daily_completed_on_date(&task.id, date).unwrap_or(false)
+                true // always show daily habits so you can see the full tracker
             } else {
                 !task.completed
             }
@@ -793,6 +846,19 @@ fn show_day_tasks(storage: &Storage, date: NaiveDate, filter: DayFilter) -> Resu
             if let Some(ref after_id) = task.habit_stack_after {
                 if let Ok(anchor) = storage.load_task(after_id) {
                     println!("     -> After: {}", anchor.title);
+                }
+            }
+
+            // Numeric total for numeric daily tasks
+            if task.is_daily && task.numeric {
+                let total = storage.get_daily_numeric_total(&task.id, date)?;
+                let unit = task.unit.as_deref().unwrap_or("units");
+                if total > 0.0 {
+                    if let Some(tgt) = task.target {
+                        println!("     {:.0}/{:.0} {}", total, tgt, unit);
+                    } else {
+                        println!("     {:.0} {}", total, unit);
+                    }
                 }
             }
 
